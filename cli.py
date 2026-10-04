@@ -1,5 +1,6 @@
 import argparse
 
+from pathlib import Path
 from search import search
 from index import assemble_index
 from incremental import update_state
@@ -21,6 +22,10 @@ def main():
     args = parser.parse_args()
 
     if args.command == "index":
+        if not Path(args.folder).is_dir():
+            print(f"Folder not found: {args.folder}")
+            return
+
         old_files = storage.load_state(STATE_FILE)
         new_files, stats = update_state(args.folder, old_files)
 
@@ -39,7 +44,7 @@ def main():
     elif args.command == "query":
         files = storage.load_state(STATE_FILE)
         if not files:
-            print("No index found. Run: python cli.py index <folder>")
+            print("Index is empty or missing. Run: python cli.py index <folder>")
             return
 
         idx, doc_lengths, paths = assemble_index(files)
