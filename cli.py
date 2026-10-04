@@ -1,40 +1,53 @@
 import argparse
-import json
 
-from loader import load_docs
-from index import build_index
 from search import search
+from index import assemble_index
+from incremental import update_state
 import storage
+
+STATE_FILE = "index.json"
 
 
 def main():
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command")
 
-    indexCmd = sub.add_parser("index")
-    indexCmd.add_argument("folder")
+    index_cmd = sub.add_parser("index")
+    index_cmd.add_argument("folder")
 
-    query = sub.add_parser("query")
-    query.add_argument("terms")
+    query_cmd = sub.add_parser("query")
+    query_cmd.add_argument("terms")
 
     args = parser.parse_args()
 
     if args.command == "index":
-        print("indexing", args.folder)
-        docs, paths = load_docs(args.folder)
-        idx, docLengths = build_index(docs)
-        print("Docs: ", len(docs), "Idx: ", len(idx))
+        old_files = storage.load_state(STATE_FILE)
+        new_files, stats = update_state(args.folder, old_files)
 
-        storage.save_index("index.json", idx, docLengths, paths)
+        changed = stats["added"] + stats["updated"] + stats["removed"]
+        if changed:
+            storage.save_state(STATE_FILE, new_files)
+
+        print(
+            f"{len(new_files)} docs | "
+            f"added {stats['added']}, updated {stats['updated']}, "
+            f"removed {stats['removed']}, unchanged {stats['unchanged']}"
+        )
+        if not changed:
+            print("Index already up to date.")
 
     elif args.command == "query":
-        print("searching", args.terms)
-        idx, doc_lengths, paths = storage.load_index("index.json")
+        files = storage.load_state(STATE_FILE)
+        if not files:
+            print("No index found. Run: python cli.py index <folder>")
+            return
+
+        idx, doc_lengths, paths = assemble_index(files)
         results = search(args.terms, idx, doc_lengths)
         if not results:
-            print("No Results")
+            print("No results")
         for doc_id, score in results:
-            print("Doc ID: ", paths[doc_id], "Score: ", round(score, 3))
+            print(paths[doc_id], round(score, 3))
 
 
 if __name__ == "__main__":
